@@ -1,0 +1,113 @@
+# 🪟 Windows Activator
+
+<p align="center">
+  <img src="activator_icon.png" alt="Windows Activator Icon" width="128" height="128" style="border-radius: 20px;">
+</p>
+
+<p align="center">
+  <strong>Современное настольное приложение на Go (Wails v3) и Vue 3 для удобной активации Windows 10 / 11 и просмотра подробных характеристик ПК.</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=flat&logo=go" alt="Go Version">
+  <img src="https://img.shields.io/badge/Wails-v3-DF0000?style=flat&logo=wails" alt="Wails Version">
+  <img src="https://img.shields.io/badge/Vue-3.x-4FC08D?style=flat&logo=vuedotjs" alt="Vue Version">
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D4?style=flat&logo=windows" alt="Platform">
+  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
+</p>
+
+---
+
+## ⚡ Возможности
+
+- 🚀 **Активация в 1 клик**:
+  - Полный автоматический цикл: установка официального GVLK-ключа Microsoft, настройка KMS-сервера, выполнение сетевой активации (`slmgr /ato`) и проверка срока действия лицензии (`slmgr /xpr`).
+  - По умолчанию предустановлен официальный GVLK-ключ для **Windows 10 / 11 Pro**:
+    `W269N-WFGWX-YVC9B-4J6C9-T83GX`
+  - Возможность ручного ввода любого другого ключа с кнопкой быстрого сброса `↺`.
+
+- 🌐 **Выбор KMS-сервера**:
+  - Быстрый выбор проверенных публичных серверов в один клик: `kms8.msguides.com`, `kms.digiboy.ir`, `kms.lotro.cc`, `kms.loli.best`.
+  - Поле для ввода любого собственного KMS-адреса.
+
+- ℹ️ **Проверка лицензии**:
+  - **Срок лицензии**: выполнение `slmgr /xpr` для проверки даты окончания активации.
+  - **Сведения**: выполнение `slmgr /dli` для получения информации о канале лицензирования (VOLUME_KMSCLIENT).
+
+- 💻 **Характеристики компьютера (Hardware Specs)**:
+  - Встроенное модальное окно с подробными характеристиками ПК:
+    - **⚡ Процессор (CPU)**: точная модель, частота и количество потоков.
+    - **🧠 Оперативная память (RAM)**: общий объём, занято, свободно и процент нагрузки.
+    - **🎮 Видеокарта (GPU)**: список всех видеокарт (интегрированная и дискретная графика).
+    - **🔌 Материнская плата**: производитель, модель системной платы и версия BIOS.
+    - **💾 Накопители**: физические диски с индикатором заполнения свободного места.
+    - **🪟 ОС и ПК**: редакция Windows, номер сборки, архитектура, имя ПК, имя пользователя и аптайм (время работы с момента загрузки).
+  - Кнопки **«Скопировать»** и **«Вывести в консоль»**.
+
+- 🖥️ **Встроенный терминал в реальном времени**:
+  - Выполнение команд через `cscript.exe //nologo` полностью исключает появление навязчивых модальных окон Windows Script Host.
+  - Автоматическое декодирование русской OEM-кодировки (CP866) в чистый UTF-8.
+  - Кнопки копирования логов в буфер обмена и очистки консоли.
+
+- 🛡️ **Контроль прав Администратора (UAC)**:
+  - Встроенный манифест Windows `requireAdministrator` для автоматического запроса UAC при запуске `.exe`.
+  - Индикатор прав в интерфейсе и кнопка быстрого перезапуска от имени администратора при необходимости.
+
+---
+
+## 📥 Скачать
+
+Готовый исполняемый файл доступен в разделе [**Releases**](https://github.com/PerfLite/Activator/releases):
+
+1. Перейдите во вкладку [Releases](https://github.com/PerfLite/Activator/releases/latest).
+2. Скачайте файл `Activator.exe`.
+3. Запустите от имени администратора (при запросе UAC нажмите «Да»).
+
+---
+
+## 🛠️ Сборка из исходников
+
+### Требования:
+- **Go** 1.25+
+- **Node.js** 18+ и **npm**
+- **Wails v3** CLI (`v3.0.0-beta.19+`)
+- Windows 10 или Windows 11 (WebView2 предустановлен)
+
+### Инструкция:
+
+1. Клонируйте репозиторий:
+   ```bash
+   git clone https://github.com/PerfLite/Activator.git
+   cd Activator
+   ```
+
+2. Установите зависимости фронтенда и соберите его:
+   ```bash
+   cd frontend
+   npm install
+   npm run build
+   cd ..
+   ```
+
+3. Сгенерируйте файл ресурсов Windows (.syso):
+   ```bash
+   wails3 generate syso -arch amd64 -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out wails_windows_amd64.syso
+   ```
+
+4. Скомпилируйте исполняемый файл Go:
+   ```bash
+   go build -ldflags="-H windowsgui -s -w" -o bin/Activator.exe .
+   ```
+
+Собранное приложение появится в папке `bin/Activator.exe`.
+
+### Запуск в режиме разработки:
+```bash
+wails3 dev
+```
+
+---
+
+## ⚖️ Дисклеймер (Disclaimer)
+
+Данное программное обеспечение создано исключительно в образовательных целях и для легального администрирования корпоративных лицензий Microsoft в локальных KMS-сетях. Пожалуйста, используйте официальные лицензионные ключи Microsoft.

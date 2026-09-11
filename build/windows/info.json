@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "1.0.0"
+	},
+	"info": {
+		"0000": {
+			"ProductVersion": "1.0.0",
+			"CompanyName": "Activator",
+			"FileDescription": "Windows KMS Activator GUI",
+			"LegalCopyright": "Open Source",
+			"ProductName": "Windows Activator",
+			"Comments": "KMS Activator for Windows 10 & 11"
+		}
+	}
+}

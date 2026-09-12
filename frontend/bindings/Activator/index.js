@@ -11,5 +11,6 @@ export {
     CommandResult,
     DiskInfo,
     HardwareSpecs,
+    PingResult,
     SystemInfo
 } from "./models.js";

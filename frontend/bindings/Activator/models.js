@@ -252,6 +252,55 @@ export class HardwareSpecs {
     }
 }
 
+export class PingResult {
+    /**
+     * Creates a new PingResult instance.
+     * @param {Partial<PingResult>} [$$source = {}] - The source object to create the PingResult.
+     */
+    constructor($$source = {}) {
+        if (!("server" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["server"] = "";
+        }
+        if (!("online" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["online"] = false;
+        }
+        if (!("latency" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["latency"] = 0;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["error"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PingResult instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {PingResult}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PingResult(/** @type {Partial<PingResult>} */($$parsedSource));
+    }
+}
+
 export class SystemInfo {
     /**
      * Creates a new SystemInfo instance.

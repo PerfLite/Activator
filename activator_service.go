@@ -3,11 +3,13 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -61,6 +63,13 @@ type SystemInfo struct {
 type CommandResult struct {
 	Success bool   `json:"success"`
 	Output  string `json:"output"`
+	Error   string `json:"error,omitempty"`
+}
+
+type PingResult struct {
+	Server  string `json:"server"`
+	Online  bool   `json:"online"`
+	Latency int64  `json:"latency"`
 	Error   string `json:"error,omitempty"`
 }
 
@@ -315,10 +324,110 @@ func (s *ActivatorService) ResetKey() CommandResult {
 	return res
 }
 
+// ClearKMSServer выполняет очистку адреса KMS-сервера: slmgr /ckms
+func (s *ActivatorService) ClearKMSServer() CommandResult {
+	s.emitLog("Очистка адреса KMS-сервера (/ckms)...")
+	return s.runSlmgr("/ckms")
+}
+
 // Rearm выполняет сброс таймера активации: slmgr /rearm
 func (s *ActivatorService) Rearm() CommandResult {
 	s.emitLog("Сброс состояния активации системы (/rearm)...")
 	return s.runSlmgr("/rearm")
+}
+
+// RestartSPPService выполняет перезапуск службы лицензирования Windows (sppsvc)
+func (s *ActivatorService) RestartSPPService() CommandResult {
+	s.emitLog("Перезапуск службы защиты ПО Windows (sppsvc)...")
+
+	cmdStop := exec.Command("net", "stop", "sppsvc")
+	cmdStop.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000,
+	}
+	outStop, _ := cmdStop.CombinedOutput()
+	if len(outStop) > 0 {
+		s.emitLog(decodeWindowsOutput(outStop))
+	}
+
+	time.Sleep(600 * time.Millisecond)
+
+	cmdStart := exec.Command("net", "start", "sppsvc")
+	cmdStart.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000,
+	}
+	outStart, errStart := cmdStart.CombinedOutput()
+	resText := decodeWindowsOutput(outStart)
+	if len(resText) > 0 {
+		s.emitLog(resText)
+	}
+
+	if errStart != nil {
+		s.emitLog(fmt.Sprintf("✖ Ошибка перезапуска sppsvc: %v", errStart))
+		return CommandResult{Success: false, Output: resText, Error: errStart.Error()}
+	}
+	s.emitLog("✔ Служба sppsvc успешно перезапущена.")
+	return CommandResult{Success: true, Output: resText}
+}
+
+// PingKMSServer выполняет проверку доступности KMS сервера по порту 1688
+func (s *ActivatorService) PingKMSServer(server string) PingResult {
+	srv := strings.TrimSpace(server)
+	if srv == "" {
+		srv = "kms8.msguides.com"
+	}
+
+	srv = strings.TrimPrefix(srv, "http://")
+	srv = strings.TrimPrefix(srv, "https://")
+	srv = strings.TrimSuffix(srv, "/")
+
+	host := srv
+	port := "1688"
+	if strings.Contains(srv, ":") {
+		h, p, err := net.SplitHostPort(srv)
+		if err == nil {
+			host = h
+			port = p
+		}
+	}
+
+	address := net.JoinHostPort(host, port)
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", address, 2500*time.Millisecond)
+	if err != nil {
+		return PingResult{
+			Server:  srv,
+			Online:  false,
+			Latency: 0,
+			Error:   err.Error(),
+		}
+	}
+	_ = conn.Close()
+	latency := time.Since(start).Milliseconds()
+
+	return PingResult{
+		Server:  srv,
+		Online:  true,
+		Latency: latency,
+	}
+}
+
+// PingKMSServers параллельно проверяет список KMS-серверов
+func (s *ActivatorService) PingKMSServers(servers []string) []PingResult {
+	results := make([]PingResult, len(servers))
+	var wg sync.WaitGroup
+
+	for i, srv := range servers {
+		wg.Add(1)
+		go func(idx int, target string) {
+			defer wg.Done()
+			results[idx] = s.PingKMSServer(target)
+		}(i, srv)
+	}
+
+	wg.Wait()
+	return results
 }
 
 var (

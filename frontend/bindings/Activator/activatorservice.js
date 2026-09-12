@@ -45,6 +45,16 @@ export function CheckStatus() {
 }
 
 /**
+ * ClearKMSServer выполняет очистку адреса KMS-сервера: slmgr /ckms
+ * @returns {$CancellablePromise<$models.CommandResult>}
+ */
+export function ClearKMSServer() {
+    return $Call.ByID(2773764687).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * FullActivation выполняет полный цикл активации
  * @param {string} key
  * @param {string} server
@@ -88,6 +98,28 @@ export function InstallKey(key) {
 }
 
 /**
+ * PingKMSServer выполняет проверку доступности KMS сервера по порту 1688
+ * @param {string} server
+ * @returns {$CancellablePromise<$models.PingResult>}
+ */
+export function PingKMSServer(server) {
+    return $Call.ByID(2479015992, server).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType3($result);
+    }));
+}
+
+/**
+ * PingKMSServers параллельно проверяет список KMS-серверов
+ * @param {string[]} servers
+ * @returns {$CancellablePromise<$models.PingResult[]>}
+ */
+export function PingKMSServers(servers) {
+    return $Call.ByID(3869330961, servers).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType4($result);
+    }));
+}
+
+/**
  * PrintSpecsToConsole выводит характеристики ПК прямо в консоль приложения
  * @returns {$CancellablePromise<$models.CommandResult>}
  */
@@ -126,6 +158,16 @@ export function ResetKey() {
 }
 
 /**
+ * RestartSPPService выполняет перезапуск службы лицензирования Windows (sppsvc)
+ * @returns {$CancellablePromise<$models.CommandResult>}
+ */
+export function RestartSPPService() {
+    return $Call.ByID(2135102009).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * @param {application$0.App | null} app
  * @returns {$CancellablePromise<void>}
  */
@@ -148,3 +190,5 @@ export function SetKMSServer(server) {
 const $$createType0 = $models.CommandResult.createFrom;
 const $$createType1 = $models.HardwareSpecs.createFrom;
 const $$createType2 = $models.SystemInfo.createFrom;
+const $$createType3 = $models.PingResult.createFrom;
+const $$createType4 = $Create.Array($$createType3);

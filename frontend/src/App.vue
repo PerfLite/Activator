@@ -8,7 +8,13 @@ import {
   CheckDetails,
   RelaunchAsAdmin,
   GetHardwareSpecs,
-  PrintSpecsToConsole
+  PrintSpecsToConsole,
+  PingKMSServer,
+  PingKMSServers,
+  ResetKey,
+  ClearKMSServer,
+  Rearm,
+  RestartSPPService
 } from '../bindings/Activator/activatorservice.js'
 
 // Ключ продукта по умолчанию (Win 10/11 Pro)
@@ -43,6 +49,13 @@ const matrixCanvasRef = ref(null)
 let matrixAnimId = null
 let resizeObserver = null
 const copySuccess = ref(false)
+
+// Состояние доступности (пинг) KMS-серверов
+const pingMap = ref({})
+const isPingingAll = ref(false)
+
+// Состояние панели устранения неполадок
+const showTroubleshoot = ref(false)
 
 // Состояние модального окна характеристик ПК
 const showSpecsModal = ref(false)
@@ -110,11 +123,6 @@ ${disksText}`
   } catch (err) {
     appendLog('✖ Ошибка копирования: ' + err)
   }
-}
-
-function selectServer(srv) {
-  currentServer.value = srv
-  appendLog(`Выбран KMS сервер: ${srv}`)
 }
 
 function resetKey() {
@@ -206,6 +214,95 @@ function doCheckStatus() {
 function doCheckDetails() {
   runAction('Сведения о лицензии', async () => {
     await CheckDetails()
+  })
+}
+
+// Проверка доступности KMS серверов
+async function pingAllServers() {
+  if (isPingingAll.value) return
+  isPingingAll.value = true
+
+  const list = [...kmsPresets]
+  const cur = currentServer.value?.trim()
+  if (cur && !list.includes(cur)) {
+    list.push(cur)
+  }
+
+  list.forEach(srv => {
+    pingMap.value[srv] = { ...(pingMap.value[srv] || {}), loading: true }
+  })
+
+  try {
+    const results = await PingKMSServers(list)
+    if (results && Array.isArray(results)) {
+      results.forEach(res => {
+        pingMap.value[res.server] = {
+          online: res.online,
+          latency: res.latency,
+          loading: false
+        }
+      })
+    }
+  } catch (err) {
+    console.error('Ошибка проверки KMS серверов:', err)
+  } finally {
+    isPingingAll.value = false
+  }
+}
+
+async function pingCurrentServer() {
+  const srv = currentServer.value?.trim()
+  if (!srv) return
+  pingMap.value[srv] = { ...(pingMap.value[srv] || {}), loading: true }
+
+  try {
+    const res = await PingKMSServer(srv)
+    if (res) {
+      pingMap.value[srv] = {
+        online: res.online,
+        latency: res.latency,
+        loading: false
+      }
+    }
+  } catch (err) {
+    pingMap.value[srv] = {
+      online: false,
+      latency: 0,
+      loading: false
+    }
+  }
+}
+
+function selectServer(srv) {
+  currentServer.value = srv
+  appendLog(`Выбран KMS сервер: ${srv}`)
+  if (!pingMap.value[srv] || pingMap.value[srv].latency === undefined) {
+    pingCurrentServer()
+  }
+}
+
+// Функции устранения неполадок
+function doUninstallKey() {
+  runAction('Удаление ключа', async () => {
+    await ResetKey()
+  })
+}
+
+function doClearKMSServer() {
+  runAction('Очистка KMS', async () => {
+    await ClearKMSServer()
+  })
+}
+
+function doRearm() {
+  runAction('Сброс таймера (Rearm)', async () => {
+    await Rearm()
+  })
+}
+
+function doRestartSPP() {
+  runAction('Перезапуск sppsvc', async () => {
+    await RestartSPPService()
   })
 }
 
@@ -307,6 +404,9 @@ onMounted(() => {
   nextTick(() => {
     initMatrixRain()
   })
+
+  // Фоновая проверка доступности KMS-серверов
+  pingAllServers()
 })
 
 onUnmounted(() => {
@@ -349,7 +449,19 @@ onUnmounted(() => {
 
           <!-- KMS Сервер: кликабельные чипы + поле ввода -->
           <div class="form-group mt-8">
-            <label class="form-label">KMS Сервер активации:</label>
+            <div class="label-with-action">
+              <label class="form-label">KMS Сервер активации:</label>
+              <button
+                class="btn-text-action"
+                type="button"
+                @click="pingAllServers"
+                :disabled="isPingingAll"
+                title="Проверить доступность всех KMS-серверов"
+              >
+                <span :class="{ 'spin-anim': isPingingAll }">🔄</span> Пинг
+              </button>
+            </div>
+
             <div class="chips-container">
               <button
                 v-for="srv in kmsPresets"
@@ -359,15 +471,48 @@ onUnmounted(() => {
                 @click="selectServer(srv)"
                 type="button"
               >
-                {{ srv }}
+                <span class="chip-label">{{ srv }}</span>
+                <span
+                  v-if="pingMap[srv]?.loading"
+                  class="ping-dot ping-loading"
+                  title="Проверка..."
+                ></span>
+                <span
+                  v-else-if="pingMap[srv]?.online"
+                  class="ping-badge ping-online"
+                  :title="`Онлайн: ${pingMap[srv].latency} мс`"
+                >
+                  <span class="ping-dot dot-green"></span>{{ pingMap[srv].latency }}ms
+                </span>
+                <span
+                  v-else-if="pingMap[srv]?.online === false"
+                  class="ping-badge ping-offline"
+                  title="Сервер не отвечает"
+                >
+                  <span class="ping-dot dot-red"></span>off
+                </span>
               </button>
             </div>
-            <input
-              v-model="currentServer"
-              type="text"
-              class="form-input server-input"
-              placeholder="Адрес KMS сервера"
-            />
+            <div class="server-input-wrapper">
+              <input
+                v-model="currentServer"
+                type="text"
+                class="form-input server-input"
+                placeholder="Адрес KMS сервера"
+                @blur="pingCurrentServer"
+                @keyup.enter="pingCurrentServer"
+              />
+              <button
+                class="btn-icon"
+                type="button"
+                @click="pingCurrentServer"
+                :disabled="pingMap[currentServer]?.loading"
+                title="Проверить доступность текущего сервера"
+              >
+                <span v-if="pingMap[currentServer]?.loading" class="spinner-tiny"></span>
+                <span v-else>📶</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -429,6 +574,54 @@ onUnmounted(() => {
               </div>
               <button class="btn-elevate" @click="handleRelaunchAdmin" title="Перезапустить с правами администратора">
                 Перезапустить (UAC)
+              </button>
+            </div>
+          </div>
+
+          <!-- Раздел Устранение неполадок / Сброс -->
+          <div class="troubleshoot-box">
+            <button
+              class="btn-troubleshoot-toggle"
+              type="button"
+              @click="showTroubleshoot = !showTroubleshoot"
+              :class="{ active: showTroubleshoot }"
+            >
+              <span class="troubleshoot-toggle-title">🛠️ Устранение неполадок</span>
+              <span class="toggle-arrow">{{ showTroubleshoot ? '▲' : '▼' }}</span>
+            </button>
+
+            <div v-if="showTroubleshoot" class="troubleshoot-grid">
+              <button
+                class="btn-trouble btn-danger"
+                :disabled="isBusy"
+                @click="doUninstallKey"
+                title="Удаляет ключ из системы и реестра (slmgr /upk + /cpky)"
+              >
+                <span>🗑️ Удалить ключ</span>
+              </button>
+              <button
+                class="btn-trouble"
+                :disabled="isBusy"
+                @click="doClearKMSServer"
+                title="Сбрасывает настроенный адрес KMS-сервера (slmgr /ckms)"
+              >
+                <span>🧹 Очистить KMS</span>
+              </button>
+              <button
+                class="btn-trouble"
+                :disabled="isBusy"
+                @click="doRearm"
+                title="Сбрасывает таймер льготного периода активации (slmgr /rearm)"
+              >
+                <span>🔄 Rearm (Сброс)</span>
+              </button>
+              <button
+                class="btn-trouble"
+                :disabled="isBusy"
+                @click="doRestartSPP"
+                title="Перезапускает службу защиты программного обеспечения Windows (sppsvc)"
+              >
+                <span>⚙️ Служба sppsvc</span>
               </button>
             </div>
           </div>
@@ -831,6 +1024,38 @@ body {
   border-color: #58a6ff;
 }
 
+.label-with-action {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.btn-text-action {
+  background: transparent;
+  border: none;
+  color: #58a6ff;
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+.btn-text-action:hover:not(:disabled) {
+  background: rgba(88, 166, 255, 0.12);
+}
+.btn-text-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spin-anim {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
 /* KMS Chips / Pills */
 .chips-container {
   display: flex;
@@ -843,12 +1068,15 @@ body {
   background: #21262d;
   border: 1px solid var(--border-color);
   color: var(--text-muted);
-  padding: 4px 8px;
+  padding: 3px 7px;
   border-radius: 5px;
   font-size: 0.72rem;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .chip:hover {
@@ -864,9 +1092,152 @@ body {
   font-weight: 500;
 }
 
+.chip-label {
+  display: inline-block;
+}
+
+.ping-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.65rem;
+  font-family: var(--font-mono);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.ping-online {
+  color: #3fb950;
+}
+
+.ping-offline {
+  color: #f85149;
+}
+
+.ping-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.ping-dot.dot-green {
+  background: #3fb950;
+  box-shadow: 0 0 4px #3fb950;
+}
+.ping-dot.dot-red {
+  background: #f85149;
+  box-shadow: 0 0 4px #f85149;
+}
+.ping-loading {
+  background: #58a6ff;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.3; }
+  50% { opacity: 1; }
+  100% { opacity: 0.3; }
+}
+
+.server-input-wrapper {
+  display: flex;
+  gap: 5px;
+}
+
 .server-input {
+  flex: 1;
   font-size: 0.8rem;
   color: #e6edf3;
+}
+
+.spinner-tiny {
+  width: 11px;
+  height: 11px;
+  border: 2px solid rgba(88, 166, 255, 0.3);
+  border-top-color: #58a6ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+/* Troubleshooting / Сброс */
+.troubleshoot-box {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 6px;
+}
+
+.btn-troubleshoot-toggle {
+  background: #161b22;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.2s;
+  width: 100%;
+}
+.btn-troubleshoot-toggle:hover {
+  color: var(--text-main);
+  border-color: #58a6ff;
+}
+.btn-troubleshoot-toggle.active {
+  color: #58a6ff;
+  border-color: #388bfd;
+  background: rgba(56, 139, 253, 0.08);
+}
+
+.troubleshoot-toggle-title {
+  font-weight: 500;
+}
+
+.toggle-arrow {
+  font-size: 0.65rem;
+  opacity: 0.7;
+}
+
+.troubleshoot-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.btn-trouble {
+  background: #1f242c;
+  border: 1px solid var(--border-color);
+  color: #c9d1d9;
+  padding: 6px 4px;
+  border-radius: 5px;
+  font-size: 0.71rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-weight: 500;
+}
+.btn-trouble:hover:not(:disabled) {
+  background: #30363d;
+  border-color: #8b949e;
+  color: white;
+}
+.btn-trouble.btn-danger:hover:not(:disabled) {
+  background: rgba(248, 81, 73, 0.15);
+  border-color: #f85149;
+  color: #ff7b72;
+}
+.btn-trouble:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* Action Buttons */

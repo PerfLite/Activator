@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { Events } from "@wailsio/runtime"
 import {
   GetSystemInfo,
@@ -39,6 +39,9 @@ const logs = ref([])
 const isBusy = ref(false)
 const currentAction = ref('')
 const terminalRef = ref(null)
+const matrixCanvasRef = ref(null)
+let matrixAnimId = null
+let resizeObserver = null
 const copySuccess = ref(false)
 
 // Состояние модального окна характеристик ПК
@@ -206,6 +209,89 @@ function doCheckDetails() {
   })
 }
 
+// Эффект фонового матричного дождя в терминале
+function initMatrixRain() {
+  const canvas = matrixCanvasRef.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const parent = canvas.parentElement
+  if (!parent) return
+
+  let width = (canvas.width = parent.clientWidth)
+  let height = (canvas.height = parent.clientHeight)
+
+  // Набор символов: случайные цифры и буквы, как в матрице
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  const fontSize = 12
+  let columns = Math.max(1, Math.floor(width / fontSize))
+  let drops = []
+
+  function resetDrops() {
+    columns = Math.max(1, Math.floor(width / fontSize))
+    drops = []
+    for (let i = 0; i < columns; i++) {
+      drops[i] = Math.floor(Math.random() * -35)
+    }
+  }
+  resetDrops()
+
+  let lastTime = 0
+  const fps = 25
+  const interval = 1000 / fps
+
+  function draw(currentTime) {
+    matrixAnimId = requestAnimationFrame(draw)
+
+    if (!currentTime) currentTime = performance.now()
+    const delta = currentTime - lastTime
+    if (delta < interval) return
+    lastTime = currentTime - (delta % interval)
+
+    // Плавный затухающий шлейф цветом фона терминала
+    ctx.fillStyle = 'rgba(9, 13, 19, 0.12)'
+    ctx.fillRect(0, 0, width, height)
+
+    ctx.font = `${fontSize}px monospace`
+
+    for (let i = 0; i < drops.length; i++) {
+      const char = chars[Math.floor(Math.random() * chars.length)]
+      const x = i * fontSize
+      const y = drops[i] * fontSize
+
+      if (y > 0 && y < height + fontSize * 2) {
+        // Лидирующий символ периодически подсвечивается светлым бликом
+        if (Math.random() > 0.88) {
+          ctx.fillStyle = '#a7f3d0'
+        } else {
+          ctx.fillStyle = '#10b981'
+        }
+        ctx.fillText(char, x, y)
+      }
+
+      if (y > height && Math.random() > 0.975) {
+        drops[i] = 0
+      }
+      drops[i]++
+    }
+  }
+
+  matrixAnimId = requestAnimationFrame(draw)
+
+  if (window.ResizeObserver) {
+    resizeObserver = new ResizeObserver(() => {
+      if (!canvas || !parent) return
+      width = canvas.width = parent.clientWidth
+      height = canvas.height = parent.clientHeight
+      resetDrops()
+      ctx.fillStyle = '#090d13'
+      ctx.fillRect(0, 0, width, height)
+    })
+    resizeObserver.observe(parent)
+  }
+}
+
 onMounted(() => {
   // Слушаем события логов из Go бэкенда
   Events.On('cmd-output', (event) => {
@@ -217,6 +303,19 @@ onMounted(() => {
   appendLog('════════════ Windows Activator (slmgr + KMS) ════════════')
   appendLog('Готов к работе. Ключ: W269N-WFGWX-YVC9B-4J6C9-T83GX')
   loadSystemInfo()
+
+  nextTick(() => {
+    initMatrixRain()
+  })
+})
+
+onUnmounted(() => {
+  if (matrixAnimId) {
+    cancelAnimationFrame(matrixAnimId)
+  }
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+  }
 })
 </script>
 
@@ -360,24 +459,27 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="terminal-body" ref="terminalRef">
-            <div v-if="logs.length === 0" class="term-empty">
-              Ожидание команд...
-            </div>
-            <div
-              v-for="(log, idx) in logs"
-              :key="idx"
-              class="term-line"
-              :class="{
-                'line-exec': log.text.startsWith('▶') || log.text.startsWith('[EXEC]'),
-                'line-success': log.text.startsWith('✔') || log.text.includes('успешно') || log.text.includes('УСПЕШНО'),
-                'line-error': log.text.startsWith('✖') || log.text.startsWith('[ERROR]'),
-                'line-warn': log.text.startsWith('[WARNING]'),
-                'line-divider': log.text.startsWith('══')
-              }"
-            >
-              <span class="term-time">{{ log.time }}</span>
-              <span class="term-text">{{ log.text }}</span>
+          <div class="terminal-content-wrap">
+            <canvas ref="matrixCanvasRef" class="matrix-canvas"></canvas>
+            <div class="terminal-body" ref="terminalRef">
+              <div v-if="logs.length === 0" class="term-empty">
+                Ожидание команд...
+              </div>
+              <div
+                v-for="(log, idx) in logs"
+                :key="idx"
+                class="term-line"
+                :class="{
+                  'line-exec': log.text.startsWith('▶') || log.text.startsWith('[EXEC]'),
+                  'line-success': log.text.startsWith('✔') || log.text.includes('успешно') || log.text.includes('УСПЕШНО'),
+                  'line-error': log.text.startsWith('✖') || log.text.startsWith('[ERROR]'),
+                  'line-warn': log.text.startsWith('[WARNING]'),
+                  'line-divider': log.text.startsWith('══')
+                }"
+              >
+                <span class="term-time">{{ log.time }}</span>
+                <span class="term-text">{{ log.text }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -857,6 +959,7 @@ body {
   padding: 0;
   overflow: hidden;
   background: #090d13;
+  position: relative;
 }
 
 .terminal-header {
@@ -867,6 +970,8 @@ body {
   background: #11161f;
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
+  position: relative;
+  z-index: 2;
 }
 
 .term-title-group {
@@ -924,7 +1029,30 @@ body {
   cursor: not-allowed;
 }
 
+.terminal-content-wrap {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #090d13;
+}
+
+.matrix-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.16;
+  z-index: 0;
+}
+
 .terminal-body {
+  position: relative;
+  z-index: 1;
   flex: 1 1 0;
   min-height: 0;
   padding: 10px 12px;
@@ -936,6 +1064,7 @@ body {
   user-select: text;
   white-space: pre-wrap;
   word-break: break-word;
+  background: transparent;
 }
 
 .term-empty {
